@@ -1,6 +1,6 @@
 package clientapp;
 
-import com.mysql.cj.xdevapi.ClientImpl;
+
 import commonlib.interfaces.IClientCallback;
 import commonlib.interfaces.ICoordinator;
 import commonlib.models.*;
@@ -113,11 +113,14 @@ public class TestModels {
                             String department = user.getDepartment();
 
                             System.out.print("Enter file name :  ");
-                            String filename = scanner.nextLine() + ".txt";
+                            String newfilename = scanner.nextLine() + ".txt";
 
-                            FileRequest fileRequest = new FileRequest(filename, department, FileRequest.OperationType.MODIFY, token);
+                            System.out.print("Enter file name :  ");
+                            byte[] newfilecontent = scanner.nextLine().getBytes();
+
+                            FileRequest fileRequest = new FileRequest(newfilename, department, FileRequest.OperationType.MODIFY, token, newfilecontent);
                             coordinator.routeFileOperation(fileRequest);
-                            System.out.println("file Modified successfully : " + filename);
+                            System.out.println("file Modified successfully : " + newfilename);
                             break;
                         }
                         System.out.println("Login needed");

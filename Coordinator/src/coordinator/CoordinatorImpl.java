@@ -69,7 +69,7 @@ public class CoordinatorImpl extends UnicastRemoteObject implements ICoordinator
 
     @Override
     public FileData requestFile(String filename, Token token) throws RemoteException {
-        ExecutorService executor = Executors.newFixedThreadPool(nodes.size());
+        ExecutorService executor = Executors.newFixedThreadPool(3);
         List<Callable<FileData>> searchTasks = new ArrayList<>();
 
         try {
@@ -145,28 +145,30 @@ public class CoordinatorImpl extends UnicastRemoteObject implements ICoordinator
             if (request.getOperation() == FileRequest.OperationType.ADD ||
                     request.getOperation() == FileRequest.OperationType.MODIFY) {
 
-                // إنشاء مجلد النسخ الاحتياطي إذا لم يكن موجودًا
+
                 Files.createDirectories(backupPath.getParent());
 
-                // كتابة محتوى الملف في النسخة الاحتياطية
+
                 Files.write(backupPath, request.getContent());
                 System.out.println("Backup updated for " + filename);
 
-                // إضافة الملف إلى قاعدة البيانات
-                try {
-                    departmentFileDAO.addFile(department, filename);
-                    System.out.println("File added to DB: " + filename);
-                } catch (SQLException e) {
-                    System.out.println("Database error on ADD/MODIFY: " + e.getMessage());
+
+                if (request.getOperation() == FileRequest.OperationType.ADD) {
+                    try {
+                        departmentFileDAO.addFile(department, filename);
+                        System.out.println("File added to DB: " + filename);
+                    } catch (SQLException e) {
+                        System.out.println("Database error on ADD/MODIFY: " + e.getMessage());
+                    }
                 }
 
             } else if (request.getOperation() == FileRequest.OperationType.DELETE) {
 
-                // حذف الملف من النسخة الاحتياطية
+
                 Files.deleteIfExists(backupPath);
                 System.out.println("Deleted backup file: " + backupPath);
 
-                // حذف الملف من قاعدة البيانات
+
                 try {
                    departmentFileDAO.removeFile(department, filename);
 

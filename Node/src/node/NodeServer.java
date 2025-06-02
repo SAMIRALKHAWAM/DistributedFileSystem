@@ -7,7 +7,7 @@ import java.util.ArrayList;
 public class NodeServer {
 
     public static void main(String[] args) {
-        // Set default values if no arguments are provided
+
         ArrayList<String> department = new ArrayList<String>();
         department.add("Development");
         department.add("Qa");
