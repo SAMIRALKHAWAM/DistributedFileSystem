@@ -9,6 +9,9 @@ import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
 import java.rmi.server.UnicastRemoteObject;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
 import java.util.*;
 import java.util.concurrent.*;
 import java.nio.file.*;
@@ -23,10 +26,14 @@ public class CoordinatorImpl extends UnicastRemoteObject implements ICoordinator
     private final Map<String, Set<IClientCallback>> fileListeners = new ConcurrentHashMap<>();
     private final Map<String, INode> nodes = new HashMap<>();
     private final CoordinatorSocketServer socketServer;
+    private  DepartmentFileManager departmentFileDAO = null;
 
     public CoordinatorImpl() throws RemoteException {
         super();
         try {
+            Connection conn = DriverManager.getConnection("jdbc:mysql://localhost:3306/distributed_fs", "root", "");
+             departmentFileDAO = new DepartmentFileManager(conn);
+
             Registry devRegistry = LocateRegistry.getRegistry("localhost", 1100);
             nodes.put("Development", (INode) devRegistry.lookup("NodeService_Development"));
             Registry qaRegistry = LocateRegistry.getRegistry("localhost", 1101);
@@ -62,21 +69,61 @@ public class CoordinatorImpl extends UnicastRemoteObject implements ICoordinator
 
     @Override
     public FileData requestFile(String filename, Token token) throws RemoteException {
-        for (String department : departmentFiles.keySet()) {
-            if (departmentFiles.get(department).contains(filename)) {
-                Path backupPath = Paths.get("./backup/" + department + "/files/" + filename);
-                if (Files.exists(backupPath)) {
+        ExecutorService executor = Executors.newFixedThreadPool(nodes.size());
+        List<Callable<FileData>> searchTasks = new ArrayList<>();
+
+        try {
+
+            List<String> departments = departmentFileDAO.getAllDepartments();
+            System.out.println(departments);
+
+            for (String department : departments) {
+                if (!departmentFileDAO.fileExists(department, filename)) {
+                    continue;
+                }
+
+                INode node = nodes.get(department);
+
+                searchTasks.add(() -> {
                     try {
+                        if (node != null) {
+
+                            return node.readFile(filename, token);
+                        }
+                    } catch (RemoteException e) {
+                        System.out.println("Node unreachable for " + department + ", trying backup...");
+                    }
+
+                    Path backupPath = Paths.get("./backup/" + department + "/files/" + filename);
+                    System.out.println(Files.exists(backupPath));
+                    if (Files.exists(backupPath)) {
+
                         byte[] content = Files.readAllBytes(backupPath);
                         return new FileData(content);
-                    } catch (IOException e) {
-                        e.printStackTrace();
                     }
+
+                    return null;
+                });
+            }
+
+            List<Future<FileData>> results = executor.invokeAll(searchTasks);
+            for (Future<FileData> future : results) {
+                FileData data = future.get();
+                if (data != null) {
+                    executor.shutdownNow();
+                    return data;
                 }
             }
+
+        } catch (Exception e) {
+            System.out.println("Error in requestFile: " + e.getMessage());
+        } finally {
+            executor.shutdown();
         }
+
         return null;
     }
+
 
     @Override
     public void routeFileOperation(FileRequest request) throws RemoteException {
@@ -94,19 +141,41 @@ public class CoordinatorImpl extends UnicastRemoteObject implements ICoordinator
 
         try {
             Path backupPath = Paths.get("./backup/" + department + "/files/" + filename);
+
             if (request.getOperation() == FileRequest.OperationType.ADD ||
                     request.getOperation() == FileRequest.OperationType.MODIFY) {
 
+                // إنشاء مجلد النسخ الاحتياطي إذا لم يكن موجودًا
                 Files.createDirectories(backupPath.getParent());
+
+                // كتابة محتوى الملف في النسخة الاحتياطية
                 Files.write(backupPath, request.getContent());
                 System.out.println("Backup updated for " + filename);
-                departmentFiles.computeIfAbsent(department, k -> new ArrayList<>()).add(filename);
+
+                // إضافة الملف إلى قاعدة البيانات
+                try {
+                    departmentFileDAO.addFile(department, filename);
+                    System.out.println("File added to DB: " + filename);
+                } catch (SQLException e) {
+                    System.out.println("Database error on ADD/MODIFY: " + e.getMessage());
+                }
 
             } else if (request.getOperation() == FileRequest.OperationType.DELETE) {
-                departmentFiles.getOrDefault(department, new ArrayList<>()).remove(filename);
+
+                // حذف الملف من النسخة الاحتياطية
                 Files.deleteIfExists(backupPath);
                 System.out.println("Deleted backup file: " + backupPath);
+
+                // حذف الملف من قاعدة البيانات
+                try {
+                   departmentFileDAO.removeFile(department, filename);
+
+                } catch (SQLException e) {
+                    System.out.println("Database error on DELETE: " + e.getMessage());
+                }
             }
+
+            // إرسال طلب المزامنة إلى النود الخاص بالقسم
             socketServer.queueSyncRequest(department, request);
 
         } catch (IOException e) {

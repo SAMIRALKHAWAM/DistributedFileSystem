@@ -25,7 +25,19 @@ public class NodeImpl extends UnicastRemoteObject implements INode {
     @Override
     public FileData readFile(String filename, Token token) throws RemoteException {
         byte[] data = files.get(filename);
-        if (data == null) return null;
+        if (data == null) {
+            Path path = Paths.get("./backup/" + department + "/files/" + filename); // adjust path if needed
+           System.out.println(Files.exists(path));
+            try {
+                if (Files.exists(path)) {
+                    data = Files.readAllBytes(path);
+                    return new FileData(data);
+                }
+            } catch (IOException e) {
+                System.out.println("Error reading file from disk: " + e.getMessage());
+            }
+            return null;
+        }
         return new FileData(data);
     }
 
@@ -47,7 +59,7 @@ public class NodeImpl extends UnicastRemoteObject implements INode {
             switch (request.getOperation()) {
                 case ADD:
                 case MODIFY:
-                    // Save file content properly
+
                     Files.write(filePath, request.getContent());
                     files.put(request.getFilename(), request.getContent());
                     System.out.println("file add / edit successfully " + request.getFilename());

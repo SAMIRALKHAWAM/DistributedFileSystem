@@ -65,6 +65,6 @@ public class CoordinatorSocketServer {
     }
 
     public void syncEveryFiveMinutes() {
-        executor.scheduleAtFixedRate(this::processPendingRequests, 0, 1, TimeUnit.MINUTES);
+        executor.scheduleAtFixedRate(this::processPendingRequests, 0, 30, TimeUnit.SECONDS);
     }
 }

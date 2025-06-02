@@ -2,7 +2,9 @@ package clientapp;
 
 import commonlib.models.Token;
 
-public class SessionManager {
+import java.rmi.RemoteException;
+
+public class SessionManager  {
     private static Token token;
 
     public static void setToken(Token newToken) {
